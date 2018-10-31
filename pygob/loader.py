@@ -80,25 +80,37 @@ class Loader:
     def _load(self, buf):
         while True:
             segment, buf = self._read_segment(buf)
-            typeid, segment = GoInt.decode(segment)
-            if typeid > 0:
-                break  # Found a value.
+            typeid, value = self._load_segment(segment)
+            if typeid > 0: 
+                return value, buf
+            else:  # Register the new type.
+                self.types[-typeid] = value
 
-            # Decode wire type and register type for later.
-            custom_type, segment = self.decode_value(WIRE_TYPE, segment)
-            self.types[-typeid] = custom_type
-            assert segment == b'', ('trailing data in segment: %s' %
-                                    list(segment))
-
+    def _load_segment(self, segment):
+        """Load from a segment.
+        """
+        typeid, segment = GoInt.decode(segment)
+        if typeid > 0:  # Found a value.
+            value, segment = self._load_value(typeid, segment)
+        else:  # Found a type.
+            value, segment = self._load_type(segment)
+        assert segment == b'', ('trailing data in segment: %s' %
+                        list(segment))
+        return typeid, value
+    
+    def _load_value(self, typeid, segment):
         # Top-level singletons are sent with an extra zero byte which
         # serves as a kind of field delta.
         go_type = self.types.get(typeid)
         if go_type is not None and not isinstance(go_type, GoStruct):
-            assert segment[0] == 0, 'illegal delta for singleton: %s' % buf[0]
-            segment = segment[1:]
+            delta, segment = GoUint.decode(segment)
+            assert delta == 0, 'illegal delta for singleton: %s' % delta
         value, segment = self.decode_value(typeid, segment)
-        assert segment == b'', 'trailing data in segment: %s' % list(segment)
-        return value, buf
+        return value, segment
+
+    def _load_type(self, segment):
+        """Decode wire type."""
+        return self.decode_value(WIRE_TYPE, segment)
 
     def decode_value(self, typeid, buf):
         go_type = self.types.get(typeid)
