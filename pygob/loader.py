@@ -92,7 +92,7 @@ class Loader:
         # serves as a kind of field delta.
         go_type = self.types.get(typeid)
         if go_type is not None and not isinstance(go_type, GoStruct):
-            assert segment[0] == 0, 'illegal delta for singleton: %s' % buf[0]
+            assert segment[0] == 0, 'illegal delta for singleton: %s' % segment[0]
             segment = segment[1:]
         value, segment = self.decode_value(typeid, segment)
         assert segment == b'', 'trailing data in segment: %s' % list(segment)
