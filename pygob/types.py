@@ -329,8 +329,13 @@ class GoComplex(GoType):
 
 
 class GoInterface(GoType):
+    """Go interface type.
+
+    Go interface are mapped to Python named tuples.
+    """
     typeid = INTERFACE
     zero = None  #!TODO? Seems to work.
+    
     def __init__(self, loader):
         self._loader = loader
     
@@ -343,7 +348,24 @@ class GoInterface(GoType):
         assert zero == 0, 'illegal delta for singleton: %s' % zero
         value, segment = self._loader.decode_value(typeid, segment)
         assert segment == b'', 'trailing data in segment: %s' % list(segment)
-        return value, buf
+        wrapped = IBox(typename=typename, typeid=typeid, value=value)
+        return wrapped, buf
+
+
+class IBox(collections.namedtuple('IBox', ['value', 'typename', 'typeid'])):
+    """Wraps a value held by an interface{} variable.
+    """
+    #? Param order? Value first?
+        #? Optional typeinfo?
+    #? Do I need typeid?
+    # def __init__(self, value, typename, typeid):
+        # """
+        # """
+        # self.value = value
+        # self.typename = typename
+        # self.typeid = typeid
+    def __repr__(self):
+        return '%s(%r)' % (type(self).__name__, self.value)
 
 
 class GoStruct(GoType):
