@@ -346,29 +346,41 @@ class GoInterface(GoType):
         typename, buf = GoString.decode(buf)
         if not typename:
             return None, buf
+        loader = self._loader
         typeid, buf = GoInt.decode(buf)
-        segment, buf = self._loader._read_segment(buf)
-        value, segment = self._loader._load_value(typeid, segment)
+        segment, buf = loader._read_segment(buf)
+        value, segment = loader._load_value(typeid, segment)
         assert segment == b'', ('trailing data in segment: %s' %
                         list(segment))
-        wrapped = IBox(typename=typename, typeid=typeid, value=value)
+        wrapped = IBox(value=value, type=(typename, typeid, loader.types))
         return wrapped, buf
+    
 
-
-class IBox(collections.namedtuple('IBox', ['value', 'typename', 'typeid'])):
+class IBox(collections.namedtuple('IBox', ['value', 'type'])):
     """Wraps a value held by an interface{} variable.
+    
+    ``type`` is a triple of:
+        name: The name of the type.
+        id: The ID number.
+        typedict: The dict for which `id` is a key.
     """
-    #? Param order? Value first?
-        #? Optional typeinfo?
-    #? Do I need typeid?
-    # def __init__(self, value, typename, typeid):
-        # """
-        # """
-        # self.value = value
-        # self.typename = typename
-        # self.typeid = typeid
     def __repr__(self):
         return '%s(%r)' % (type(self).__name__, self.value)
+    def __hash__(self):
+        return hash(self._key)
+    def __eq__(self, other):
+        try:
+            return self._key == other._key
+        except AttributeError: # Comparing to a plain value.
+            value = self.value
+            return type(value) == type(other) and value == other
+    @property
+    def _key(self):
+        """Unique value as a dict key.
+        
+        In Go, 0, 0.0, and False are all different key values.
+        """
+        return (self.value, self.type[0])
 
 
 class GoStruct(GoType):
