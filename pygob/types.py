@@ -287,14 +287,17 @@ class GoString(GoType):
 
     @staticmethod
     def encode(s):
-        """Encode a Python string as a Go string. The string will be UTF-8
-        encoded before being turned into bytes since most Go programs
-        will expect that encoding:
+        """Encode a Python string or bytes as a Go string.
+
+        A string will be UTF-8 encoded before being turned into
+        bytes since most Go programs will expect that encoding:
 
         >>> GoString.encode('alpha: α')
         b'\\talpha: \\xce\\xb1'
         """
-        return GoByteSlice.encode(s.encode('utf-8'))
+        if hasattr(s, 'encode'):
+            s = s.encode('utf-8')
+        return GoByteSlice.encode(s)
 
 
 class GoComplex(GoType):
