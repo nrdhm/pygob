@@ -22,7 +22,7 @@ class Dumper:
         # Top-level singletons are sent with an extra zero byte which
         # serves as a kind of field delta.
         python_type = type(value)
-        go_type = self.types.get(python_type)
+        go_type = getattr(python_type, 'go_type', None) or self.types.get(python_type)
         if go_type is None:
             raise NotImplementedError("cannot encode %s of type %s" %
                                       (value, python_type))
