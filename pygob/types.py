@@ -348,10 +348,9 @@ class GoInterface(GoType):
             return None, buf
         typeid, buf = GoInt.decode(buf)
         segment, buf = self._loader._read_segment(buf)
-        zero, segment = GoUint.decode(segment)  #What's this about?
-        assert zero == 0, 'illegal delta for singleton: %s' % zero
-        value, segment = self._loader.decode_value(typeid, segment)
-        assert segment == b'', 'trailing data in segment: %s' % list(segment)
+        value, segment = self._loader._load_value(typeid, segment)
+        assert segment == b'', ('trailing data in segment: %s' %
+                        list(segment))
         wrapped = IBox(typename=typename, typeid=typeid, value=value)
         return wrapped, buf
 
