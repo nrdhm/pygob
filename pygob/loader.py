@@ -1,13 +1,14 @@
-from .types import (BOOL, INT, UINT, FLOAT, BYTE_SLICE, STRING, COMPLEX,
+from .types import (BOOL, INT, UINT, FLOAT, BYTE_SLICE, STRING, COMPLEX, INTERFACE,
                     WIRE_TYPE, ARRAY_TYPE, COMMON_TYPE, SLICE_TYPE,
                     STRUCT_TYPE, FIELD_TYPE, FIELD_TYPE_SLICE, MAP_TYPE)
 from .types import (GoBool, GoUint, GoInt, GoFloat, GoByteSlice, GoString,
-                    GoComplex, GoStruct, GoWireType, GoSlice)
+                    GoComplex, GoInterface, GoStruct, GoWireType, GoSlice)
 
 
 class Loader:
     def __init__(self):
         # Compound types that depend on the basic types above.
+        interface_type = GoInterface(self)
         common_type = GoStruct(COMMON_TYPE, 'CommonType', self, [
             ('Name', STRING),
             ('Id', INT),
@@ -51,6 +52,7 @@ class Loader:
             BYTE_SLICE: GoByteSlice,
             STRING: GoString,
             COMPLEX: GoComplex,
+            INTERFACE: interface_type,
             WIRE_TYPE: wire_type,
             ARRAY_TYPE: array_type,
             COMMON_TYPE: common_type,

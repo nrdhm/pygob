@@ -328,6 +328,24 @@ class GoComplex(GoType):
         return GoFloat.encode(z.real) + GoFloat.encode(z.imag)
 
 
+class GoInterface(GoType):
+    typeid = INTERFACE
+    zero = None  #!TODO? Seems to work.
+    def __init__(self, loader):
+        self._loader = loader
+    
+    def decode(self, buf):
+        typename, buf = GoString.decode(buf)
+        # A nil value has an empty typename. What does that mean?
+        typeid, buf = GoInt.decode(buf)
+        segment, buf = self._loader._read_segment(buf)
+        zero, segment = GoUint.decode(segment)  #What's this about?
+        assert zero == 0, 'illegal delta for singleton: %s' % zero
+        value, segment = self._loader.decode_value(typeid, segment)
+        assert segment == b'', 'trailing data in segment: %s' % list(segment)
+        return value, buf
+
+
 class GoStruct(GoType):
     """A Go struct.
 
