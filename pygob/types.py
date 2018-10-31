@@ -341,7 +341,8 @@ class GoInterface(GoType):
     
     def decode(self, buf):
         typename, buf = GoString.decode(buf)
-        # A nil value has an empty typename. What does that mean?
+        if not typename:
+            return None, buf
         typeid, buf = GoInt.decode(buf)
         segment, buf = self._loader._read_segment(buf)
         zero, segment = GoUint.decode(segment)  #What's this about?
