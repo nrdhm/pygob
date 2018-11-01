@@ -81,7 +81,7 @@ class Loader:
         while True:
             segment, buf = self._read_segment(buf)
             typeid, value = self._load_segment(segment)
-            if typeid > 0: 
+            if typeid > 0:
                 return value, buf
             else:  # Register the new type.
                 self.types[-typeid] = value
@@ -97,7 +97,7 @@ class Loader:
         assert segment == b'', ('trailing data in segment: %s' %
                         list(segment))
         return typeid, value
-    
+
     def _load_value(self, typeid, segment):
         # Top-level singletons are sent with an extra zero byte which
         # serves as a kind of field delta.

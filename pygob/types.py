@@ -338,10 +338,10 @@ class GoInterface(GoType):
     """
     typeid = INTERFACE
     zero = None  #!TODO? Seems to work.
-    
+
     def __init__(self, loader):
         self._loader = loader
-    
+
     def decode(self, buf):
         typename, buf = GoString.decode(buf)
         if not typename:
@@ -352,17 +352,27 @@ class GoInterface(GoType):
         value, segment = loader._load_value(typeid, segment)
         assert segment == b'', ('trailing data in segment: %s' %
                         list(segment))
-        wrapped = IBox(value=value, type=(typename, typeid, loader.types))
+        wrapped = IBox(value=value, type=(typename, typeid))
         return wrapped, buf
-    
+
+    def encode(self, box):
+        if box is None:
+            return GoByteSlice.encode(b'')
+        value, [typename, typeid] = box
+        parts = []
+        parts.append(GoString.encode(typename))
+        parts.append(GoInt.encode(typeid))
+        segment = self._loader.types[typeid].encode(value)
+        parts.append(GoByteSlice.encode(GoUint.encode(0) + segment))
+        return b''.join(parts)
+
 
 class IBox(collections.namedtuple('IBox', ['value', 'type'])):
     """Wraps a value held by an interface{} variable.
-    
+
     ``type`` is a triple of:
         name: The name of the type.
         id: The ID number.
-        typedict: The dict for which `id` is a key.
     """
     def __repr__(self):
         return '%s(%r)' % (type(self).__name__, self.value)
@@ -377,7 +387,7 @@ class IBox(collections.namedtuple('IBox', ['value', 'type'])):
     @property
     def _key(self):
         """Unique value as a dict key.
-        
+
         In Go, 0, 0.0, and False are all different key values.
         """
         return (self.value, self.type[0])
@@ -413,6 +423,7 @@ class GoStruct(GoType):
         self._loader = loader
         self._fields = fields
         self._class = collections.namedtuple(name, [n for (n, t) in fields])
+        self._class.go_type = self
 
     def decode(self, buf):
         """Decode data from buf and return a namedtuple."""
@@ -427,6 +438,19 @@ class GoStruct(GoType):
             value, buf = self._loader.types[typeid].decode(buf)
             values[name] = value
         return self.zero._replace(**values), buf
+
+    def encode(self, struct):
+        last_id = -1  # Last field written.
+        parts = []
+        for field_id, (value, (n, t)) in enumerate(zip(struct, self._fields)):
+            typ = self._loader.types[t]
+            if value == typ.zero: #skip
+                continue
+            parts.append(GoUint.encode(field_id - last_id))
+            parts.append(typ.encode(value))
+            last_id = field_id
+        parts.append(b'\x00')
+        return b''.join(parts)
 
     def __repr__(self):
         """GoStruct representation.
@@ -454,14 +478,14 @@ class GoWireType(GoStruct):
             typeid = wire_type.ArrayT.CommonType.Id
             elem = wire_type.ArrayT.Elem
             length = wire_type.ArrayT.Len
-            return GoArray(typeid, self._loader, elem, length), buf
+            go_type = GoArray(typeid, self._loader, elem, length)
 
-        if wire_type.SliceT != self._loader.types[SLICE_TYPE].zero:
+        elif wire_type.SliceT != self._loader.types[SLICE_TYPE].zero:
             typeid = wire_type.SliceT.CommonType.Id
             elem = wire_type.SliceT.Elem
-            return GoSlice(typeid, self._loader, elem), buf
+            go_type = GoSlice(typeid, self._loader, elem)
 
-        if wire_type.StructT != self._loader.types[STRUCT_TYPE].zero:
+        elif wire_type.StructT != self._loader.types[STRUCT_TYPE].zero:
             typeid = wire_type.StructT.CommonType.Id
             # Named tuples must be constructed using strings, not
             # bytes, so we need to decode the names here. Go source
@@ -469,15 +493,60 @@ class GoWireType(GoStruct):
             name = wire_type.StructT.CommonType.Name.decode('utf-8')
             fields = [(f.Name.decode('utf-8'), f.Id)
                       for f in wire_type.StructT.Field]
-            return GoStruct(typeid, name, self._loader, fields), buf
+            go_type = GoStruct(typeid, name, self._loader, fields)
 
-        if wire_type.MapT != self._loader.types[MAP_TYPE].zero:
+        elif wire_type.MapT != self._loader.types[MAP_TYPE].zero:
             typeid = wire_type.MapT.CommonType.Id
             key_typeid = wire_type.MapT.Key
             elem_typeid = wire_type.MapT.Elem
-            return GoMap(typeid, self._loader, key_typeid, elem_typeid), buf
+            go_type = GoMap(typeid, self._loader, key_typeid, elem_typeid)
 
-        raise NotImplementedError("cannot handle %s" % wire_type)
+        else:
+            raise NotImplementedError("cannot handle %s" % wire_type)
+
+        # The type's type.
+        go_type.go_type = self
+        return go_type, buf
+
+    def encode(self, go_type):
+        typeid = go_type.typeid
+        wire_ctr = self.zero._replace
+        scope = self._loader.types
+        common_ctor = scope[COMMON_TYPE].zero._replace
+        com_type = common_ctor(Id=typeid)
+        if isinstance(go_type, GoArray):
+            type_ctr = scope[ARRAY_TYPE].zero._replace
+            elem = go_type._elem
+            length = go_type._length
+            arr_type = type_ctr(CommonType=com_type, Elem=elem, Len=len)
+            wire_type = wire_ctr(ArrayT=arr_type)
+        elif isinstance(go_type, GoSlice):
+            type_ctr = scope[SLICE_TYPE].zero._replace
+            elem = go_type._elem
+            slice_type = type_ctr(CommonType=com_type, Elem=elem)
+            wire_type = wire_ctr(SliceT=slice_type)
+        elif isinstance(go_type, GoStruct):
+            type_ctr = scope[STRUCT_TYPE].zero._replace
+            field_ctr = scope[FIELD_TYPE]._class
+            #fieldslice_ctr = scope[FIELD_TYPE_SLICE]._class
+            # fields = fieldslice_ctr([field_ctr(n.encode('utf8'), i)
+                      # for n, i in go_type._fields])
+            com_type = com_type._replace(Name=go_type._name.encode('utf8'))
+            fields = [field_ctr(n.encode('utf8'), i)
+                      for n, i in go_type._fields]
+            struct_type = type_ctr(CommonType=com_type, Field=fields)
+            wire_type = wire_ctr(StructT=struct_type)
+        elif isinstance(go_type, GoMap):
+            type_ctr = scope[MAP_TYPE].zero._replace
+            key_typeid = go_type._key_typeid
+            elem_typeid = go_type._elem_typeid
+            map_type = type_ctr(CommonType=com_type,
+                                Key=key_typeid,
+                                Elem=elem_typeid)
+            wire_type = wire_ctr(MapT=map_type)
+        else:
+            raise NotImplementedError("cannot encode %s" % wire_type)
+        return super().encode(wire_type)
 
 
 class GoArray(GoType):
@@ -556,6 +625,14 @@ class GoSlice(GoType):
             result.append(value)
         return result, buf
 
+    def encode(self, lst):
+        parts = []
+        parts.append(GoUint.encode(len(lst)))
+        eltype = self._loader.types[self._elem]
+        for x in lst:
+            parts.append(eltype.encode(x))
+        return b''.join(parts)
+
 
 class GoMap(GoType):
     """A Go map.
@@ -584,9 +661,27 @@ class GoMap(GoType):
         """Decode data from buf and return a dict."""
         count, buf = GoUint.decode(buf)
 
-        result = {}
+        result = GoDict()
+        result.go_type = self
         for i in range(count):
             key, buf = self._loader.decode_value(self._key_typeid, buf)
             value, buf = self._loader.decode_value(self._elem_typeid, buf)
             result[key] = value
         return result, buf
+
+    def encode(self, d):
+        types = self._loader.types
+        keytype = types[self._key_typeid]
+        valtype = types[self._elem_typeid]
+        parts = []
+        parts.append(GoUint.encode(len(d)))
+        for k, v in d.items():
+            parts.append(keytype.encode(k))
+            parts.append(valtype.encode(v))
+        return b''.join(parts)
+
+
+class GoDict(dict):
+    """Subclass of dict to allow adding attributes.
+    """
+
