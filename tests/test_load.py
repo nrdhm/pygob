@@ -4,6 +4,8 @@ import collections
 import pytest
 
 import pygob
+from pygob import Loader
+from pygob.types import GoStruct, INT
 
 
 @pytest.mark.parametrize(('data', 'expected'), [
@@ -198,9 +200,7 @@ def test_person_struct():
                                              Address(b'Main St', 17))
 
 
-def test_access_zero_of_a_recursive_struct():
-    from pygob import Loader
-    from pygob.types import GoStruct, INT
+def test_zero_value_of_a_recursive_struct():
     node = GoStruct(150, 'Node', Loader(), [
         ('Left', 150),
         ('Right', 150),
@@ -219,3 +219,14 @@ def test_a_recursive_struct():
     ]
     Node = collections.namedtuple('Node', ['Value', 'Left', 'Right'])
     assert pygob.load(bytes(data)) == Node(1, Node(2, None, None), None)
+
+
+def test_zero_value_of_some_deeply_recursive_struct():
+    loader = Loader()
+    chicken = GoStruct(150, 'Chicken', loader, [
+        ('Egg', 151),
+    ])
+    egg = GoStruct(151, 'Egg', loader, [
+        ('Chicken', 150),
+    ])
+    assert chicken.zero
